@@ -30,6 +30,9 @@ import General.Conduit
 import Data.Semigroup
 import Control.Applicative
 import Prelude
+import Data.Functor ((<&>))
+import Data.Function ((&))
+import Data.Graph (graphFromEdges', topSort)
 
 ---------------------------------------------------------------------
 -- DATA TYPE
@@ -65,7 +68,7 @@ instance NFData Package where
 packagePopularity :: Map.Map PkgName Package -> ([String], Map.Map PkgName Int)
 packagePopularity cbl = mp `seq` (errs, mp)
     where
-        mp = Map.map length good
+        mp = toposortPackages good
         errs =  [ strUnpack user ++ ".cabal: Import of non-existant package " ++ strUnpack name ++
                           (if null rest then "" else ", also imported by " ++ show (length rest) ++ " others")
                 | (name, user:rest) <- Map.toList bad]
@@ -147,3 +150,14 @@ lexCabal = f . lines
                  = (lower name, trim x : replace ["."] [""] (map (trim . fst . breakOn "--") xs1)) : f xs2
         f (x:xs) = f xs
         f [] = []
+
+toposortPackages :: Map.Map PkgName [PkgName] -> Map.Map PkgName Int
+toposortPackages pkgs =
+  let (graph, fromVertex) =
+        pkgs
+          & Map.toList
+          <&> (\(pkgName, deps) -> ((), pkgName, deps))
+          & graphFromEdges'
+   in graph & topSort
+        & (\indices -> zip (map ((\(_, p, _) -> p) . fromVertex) (reverse indices)) [1 ..])
+        & Map.fromList
